@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,8 +8,35 @@ import 'package:path/path.dart' as p;
 import 'db_helper.dart';
 import 'models.dart';
 
+List<Tenant> parseExcelInIsolate(List<int> bytes) {
+  var excel = Excel.decodeBytes(bytes);
+  List<Tenant> tenants = [];
+
+  for (var table in excel.tables.keys) {
+    if (excel.tables[table] == null) continue;
+    for (var row in excel.tables[table]!.rows.skip(1)) {
+      if (row.length >= 6) {
+        String fName = row[1]?.value.toString() ?? "";
+        String dNum = row[5]?.value.toString() ?? "";
+
+        if (fName.isNotEmpty && dNum.isNotEmpty) {
+          tenants.add(
+            Tenant(
+              firstName: fName,
+              lastName: row[2]?.value.toString() ?? "",
+              nationality: row[3]?.value.toString() ?? "",
+              docType: row[4]?.value.toString() ?? "ID",
+              docNumber: dNum,
+            ),
+          );
+        }
+      }
+    }
+  }
+  return tenants;
+}
+
 class ExcelService {
-  
   // Helper: Generates the Excel file in memory
   Future<List<int>?> _generateExcelBytes() async {
     final db = DatabaseHelper.instance;
@@ -31,7 +59,9 @@ class ExcelService {
     ]);
 
     for (var tenant in tenants) {
-      List<RoomRegistration> regs = await db.readRegistrationsByTenant(tenant.id!);
+      List<RoomRegistration> regs = await db.readRegistrationsByTenant(
+        tenant.id!,
+      );
       String lastRoom = regs.isNotEmpty ? regs.first.roomNumber : '-';
       String lastDate = regs.isNotEmpty
           ? regs.first.checkInDate.toString().split(' ')[0]
@@ -52,7 +82,7 @@ class ExcelService {
     return excel.save();
   }
 
-  // OPTION 1: Share (Existing functionality)
+  // OPTION 1: Share
   Future<void> shareExcel() async {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return;
@@ -64,10 +94,7 @@ class ExcelService {
       ..writeAsBytesSync(fileBytes);
 
     await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(path)],
-        text: 'Tenants Database Export',
-      ),
+      ShareParams(files: [XFile(path)], text: 'Tenants Database Export'),
     );
   }
 
@@ -94,16 +121,17 @@ class ExcelService {
       if (!await directory.exists()) {
         directory = await getExternalStorageDirectory();
       }
-      
+
       if (directory != null) {
         // Create a unique filename to avoid overwriting
-        String fileName = "tenants_report_${DateTime.now().millisecondsSinceEpoch}.xlsx";
+        String fileName =
+            "tenants_report_${DateTime.now().millisecondsSinceEpoch}.xlsx";
         outputFile = p.join(directory.path, fileName);
       }
     } else if (Platform.isIOS) {
-       // IOS: Save to Documents (accessible via Files app)
-       final directory = await getApplicationDocumentsDirectory();
-       outputFile = p.join(directory.path, "tenants_report.xlsx");
+      // IOS: Save to Documents (accessible via Files app)
+      final directory = await getApplicationDocumentsDirectory();
+      outputFile = p.join(directory.path, "tenants_report.xlsx");
     }
 
     if (outputFile != null) {
@@ -120,7 +148,7 @@ class ExcelService {
     return null;
   }
 
-  // Import (Unchanged)
+  // Import
   Future<void> importFromExcel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -129,34 +157,17 @@ class ExcelService {
 
     if (result != null) {
       File file = File(result.files.single.path!);
-      var bytes = file.readAsBytesSync();
-      var excel = Excel.decodeBytes(bytes);
-      final db = DatabaseHelper.instance;
+      var bytes = await file.readAsBytes();
 
-      for (var table in excel.tables.keys) {
-        if (excel.tables[table] == null) continue;
-        for (var row in excel.tables[table]!.rows.skip(1)) {
-          if (row.length >= 6) {
-            String fName = row[1]?.value.toString() ?? "";
-            String lName = row[2]?.value.toString() ?? "";
-            String nat = row[3]?.value.toString() ?? "";
-            String dType = row[4]?.value.toString() ?? "ID";
-            String dNum = row[5]?.value.toString() ?? "";
+      List<Tenant> newTenants = await compute(parseExcelInIsolate, bytes);
 
-            if (fName.isNotEmpty && dNum.isNotEmpty) {
-              await db.createTenant(
-                Tenant(
-                  firstName: fName,
-                  lastName: lName,
-                  nationality: nat,
-                  docType: dType,
-                  docNumber: dNum,
-                ),
-              );
-            }
-          }
-        }
+      final db = await DatabaseHelper.instance.database;
+      final batch = db.batch();
+
+      for (var t in newTenants) {
+        batch.insert('tenants', t.toMap());
       }
+      await batch.commit(noResult: true);
     }
   }
 }
