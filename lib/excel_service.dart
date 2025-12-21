@@ -82,18 +82,26 @@ class ExcelService {
       var excel = Excel.decodeBytes(bytes);
       final db = DatabaseHelper.instance;
 
+      // VALIDATION: Check if at least Tenants sheet exists before wiping DB
+      if (!excel.tables.containsKey('Tenants')) {
+        return "Error: Invalid Excel file (Missing 'Tenants' sheet)";
+      }
+
+      // CRITICAL STEP: WIPE OLD DATA
+      await db.clearAllData();
+
       int tenantsAdded = 0;
       int regsAdded = 0;
 
-      // This map links the ID in the Excel file to the REAL ID in the database
+      // Map to link Excel IDs to new Database IDs
+      // Map<Excel_ID, New_DB_ID>
       Map<int, int> excelIdToDbId = {};
 
-      // Process Tenants Sheet first to build the ID Map
+      // Process Tenants Sheet
       if (excel.tables.containsKey('Tenants')) {
         var table = excel.tables['Tenants']!;
         for (var row in table.rows.skip(1)) {
           if (row.length >= 6) {
-            // Parse Excel Data
             int? excelId;
             if (row[0]?.value != null) {
               excelId = int.tryParse(row[0]!.value.toString());
@@ -106,32 +114,26 @@ class ExcelService {
             String dNum = row[5]?.value.toString() ?? "";
 
             if (fName.isNotEmpty && dNum.isNotEmpty && excelId != null) {
-              // Check if tenant already exists in DB by Document Number
-              int? existingDbId = await db.getTenantIdByDoc(dNum);
+              // Create new tenant (Since DB is empty, no need to check duplicates)
+              int newDbId = await db.createTenant(
+                Tenant(
+                  firstName: fName,
+                  lastName: lName,
+                  nationality: nat,
+                  docType: dType,
+                  docNumber: dNum,
+                ),
+              );
+              tenantsAdded++;
 
-              if (existingDbId != null) {
-                // Tenant exists, map Excel ID to existing DB ID
-                excelIdToDbId[excelId] = existingDbId;
-              } else {
-                // Create new tenant
-                int newDbId = await db.createTenant(
-                  Tenant(
-                    firstName: fName,
-                    lastName: lName,
-                    nationality: nat,
-                    docType: dType,
-                    docNumber: dNum,
-                  ),
-                );
-                tenantsAdded++;
-                excelIdToDbId[excelId] = newDbId;
-              }
+              // Store mapping: Excel said ID was 5, but DB says ID is 1
+              excelIdToDbId[excelId] = newDbId;
             }
           }
         }
       }
 
-      // Process Registrations Sheet using the ID Map
+      // Process Registrations Sheet
       if (excel.tables.containsKey('Registrations')) {
         var table = excel.tables['Registrations']!;
         for (var row in table.rows.skip(1)) {
@@ -146,11 +148,10 @@ class ExcelService {
             String dateStr = row[6]?.value.toString() ?? "";
 
             if (excelTenantId != null && room.isNotEmpty) {
-              // Find the real database ID using our map
+              // Use the map to find who this registration belongs to in the new DB
               int? realDbId = excelIdToDbId[excelTenantId];
 
               if (realDbId != null) {
-                // Parse date
                 DateTime date;
                 try {
                   date = DateTime.parse(dateStr);
@@ -158,7 +159,6 @@ class ExcelService {
                   date = DateTime.now();
                 }
 
-                // Insert Registration linked to the correct local DB ID
                 await db.createRegistration(
                   RoomRegistration(
                     tenantId: realDbId,
@@ -173,41 +173,34 @@ class ExcelService {
         }
       }
 
-      return "Imported: $tenantsAdded Tenants, $regsAdded Registrations";
+      return "Database Replaced: $tenantsAdded Tenants, $regsAdded Registrations";
     } catch (e) {
       return "Error: $e";
     }
   }
 
   // SHARED / SAVE HELPERS
-
   Future<void> shareExcel() async {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return;
-
     final directory = await getTemporaryDirectory();
-    final path = "${directory.path}/residencia_database.xlsx";
+    final path = "${directory.path}/full_database_export.xlsx";
     File(path)
       ..createSync(recursive: true)
       ..writeAsBytesSync(fileBytes);
-
     await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(path)],
-        text: 'Residencia Full Database Export',
-      ),
+      ShareParams(files: [XFile(path)], text: 'Residencia Backup'),
     );
   }
 
   Future<String?> saveToDevice() async {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return null;
-
     String? outputFile;
 
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       outputFile = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save Database Export',
+        dialogTitle: 'Save Backup',
         fileName: 'residencia_backup.xlsx',
         allowedExtensions: ['xlsx'],
         type: FileType.custom,

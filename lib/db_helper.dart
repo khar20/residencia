@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'models.dart';
@@ -12,7 +13,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('residencia.db');
+    _database = await _initDB('tenants_manager_v2.db');
     return _database!;
   }
 
@@ -55,7 +56,21 @@ class DatabaseHelper {
     ''');
   }
 
-  // CRUD Tenants
+  // --- NEW: Clear Database (For full replacement) ---
+  Future<void> clearAllData() async {
+    final db = await instance.database;
+    await db.transaction((txn) async {
+      // Delete all rows
+      await txn.delete('registrations');
+      await txn.delete('tenants');
+      // Optional: Reset the Auto-Increment counters so IDs start from 1 again
+      await txn.rawDelete(
+        'DELETE FROM sqlite_sequence WHERE name="tenants" OR name="registrations"',
+      );
+    });
+  }
+
+  // --- CRUD Tenants ---
   Future<int> createTenant(Tenant tenant) async {
     final db = await instance.database;
     return await db.insert('tenants', tenant.toMap());
@@ -158,9 +173,10 @@ class DatabaseHelper {
     );
   }
 
-  // HELPERS
+  // --- IMPORT/EXPORT HELPERS ---
 
-  // Check if tenant exists (to prevent duplicates)
+  // Note: getTenantIdByDoc is still useful but less critical if we wipe DB,
+  // but we keep it in case you switch strategies later.
   Future<int?> getTenantIdByDoc(String docNumber) async {
     final db = await instance.database;
     final result = await db.query(
@@ -176,10 +192,8 @@ class DatabaseHelper {
     return null;
   }
 
-  // Get Join data for Export
   Future<List<Map<String, dynamic>>> getAllRegistrationsForExport() async {
     final db = await instance.database;
-    // We select tenant_id as well as the descriptive columns
     return await db.rawQuery('''
       SELECT 
         r.room_number, 
