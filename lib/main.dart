@@ -80,19 +80,22 @@ class _TenantListScreenState extends State<TenantListScreen> {
   }
 
   // Add/Edit Dialog
-  void _showForm({Tenant? tenant}) {
+  // --- Replace the _showForm method in _TenantListScreenState ---
+
+  void _showForm({Tenant? tenant}) async {
     final fNameCtrl = TextEditingController(text: tenant?.firstName);
     final lNameCtrl = TextEditingController(text: tenant?.lastName);
     final natCtrl = TextEditingController(text: tenant?.nationality);
     final docNumCtrl = TextEditingController(text: tenant?.docNumber);
 
-    String selectedDocType = tenant?.docType ?? 'ID Card';
-    final List<String> docTypes = [
-      'ID Card',
-      'Passport',
-      'Driver License',
-      'Other',
-    ];
+    // 1. Fetch available types from DB (History + Defaults)
+    List<String> availableDocTypes = await DatabaseHelper.instance
+        .getDistinctDocTypes();
+
+    // Variable to store the final value (initially the current value or default)
+    String currentDocType = tenant?.docType ?? 'ID Card';
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -116,20 +119,52 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       decoration: const InputDecoration(labelText: 'Last Name'),
                     ),
                     const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedDocType,
-                      decoration: const InputDecoration(
-                        labelText: 'Document Type',
-                      ),
-                      items: docTypes.map((String val) {
-                        return DropdownMenuItem(value: val, child: Text(val));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
-                          selectedDocType = val;
+
+                    // Autocomplete instead of Dropdown
+                    Autocomplete<String>(
+                      initialValue: TextEditingValue(text: currentDocType),
+
+                      // Define the options based on what the user types
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text == '') {
+                          return const Iterable<String>.empty();
                         }
+                        return availableDocTypes.where((String option) {
+                          return option.toLowerCase().contains(
+                            textEditingValue.text.toLowerCase(),
+                          );
+                        });
                       },
+
+                      onSelected: (String selection) {
+                        currentDocType = selection;
+                      },
+
+                      // The actual text field appearance
+                      fieldViewBuilder:
+                          (
+                            context,
+                            textEditingController,
+                            focusNode,
+                            onFieldSubmitted,
+                          ) {
+                            // Ensure our variable stays in sync if the user types manually
+                            textEditingController.addListener(() {
+                              currentDocType = textEditingController.text;
+                            });
+
+                            return TextField(
+                              controller: textEditingController,
+                              focusNode: focusNode,
+                              decoration: const InputDecoration(
+                                labelText: 'Document Type',
+                                hintText: 'Select or type new...',
+                                suffixIcon: Icon(Icons.arrow_drop_down),
+                              ),
+                            );
+                          },
                     ),
+
                     TextField(
                       controller: docNumCtrl,
                       decoration: const InputDecoration(
@@ -156,12 +191,18 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       return;
                     }
 
+                    // Validate that doc type isn't empty
+                    if (currentDocType.trim().isEmpty) {
+                      currentDocType = 'ID Card'; // Fallback
+                    }
+
                     final newTenant = Tenant(
                       id: tenant?.id,
                       firstName: fNameCtrl.text,
                       lastName: lNameCtrl.text,
                       nationality: natCtrl.text,
-                      docType: selectedDocType,
+                      docType:
+                          currentDocType, // Uses the variable from Autocomplete
                       docNumber: docNumCtrl.text,
                     );
 
@@ -171,14 +212,10 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       await DatabaseHelper.instance.updateTenant(newTenant);
                     }
 
-                    // Check if dialog is still open
                     if (!dialogContext.mounted) return;
                     Navigator.pop(dialogContext);
 
-                    // Check if the main screen is still there to refresh
-                    if (mounted) {
-                      _refreshList();
-                    }
+                    if (mounted) _refreshList();
                   },
                   child: const Text('Save'),
                 ),
@@ -408,7 +445,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.tenant.firstName)),
+      appBar: AppBar(title: Text(widget.tenant.fullName)),
       body: Column(
         children: [
           Padding(

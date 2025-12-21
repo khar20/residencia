@@ -18,7 +18,7 @@ class Tenant {
   });
 
   // Helper to display full name
-  String get fullName => '$lastName, $firstName';
+  String get fullName => '$firstName $lastName';
 
   Map<String, dynamic> toMap() {
     return {

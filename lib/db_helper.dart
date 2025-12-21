@@ -49,6 +49,26 @@ class DatabaseHelper {
     ''');
   }
 
+  // Retrieve distinct document types
+  Future<List<String>> getDistinctDocTypes() async {
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT doc_type FROM tenants WHERE is_deleted = 0 ORDER BY doc_type ASC',
+    );
+
+    List<String> types = result
+        .map((row) => row['doc_type'] as String)
+        .toList();
+
+    final defaults = ['ID Card', 'Passport', 'Driver License', 'Other'];
+    for (var def in defaults) {
+      if (!types.contains(def)) {
+        types.add(def);
+      }
+    }
+    return types;
+  }
+
   // CRUD TENANTS
 
   Future<int> createTenant(Tenant tenant) async {
