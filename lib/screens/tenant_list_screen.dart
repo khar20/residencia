@@ -215,7 +215,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                               focusNode: focusNode,
                               decoration: InputDecoration(
                                 labelText: 'Document Type',
-                                hintText: 'e.g. DNI, Passport',
                                 suffixIcon: const Icon(Icons.arrow_drop_down),
                                 errorText: docTypeError,
                               ),
@@ -262,7 +261,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                               focusNode: focusNode,
                               decoration: InputDecoration(
                                 labelText: 'Nationality',
-                                hintText: 'e.g. Peru, USA',
                                 suffixIcon: const Icon(Icons.arrow_drop_down),
                                 errorText: natError,
                               ),

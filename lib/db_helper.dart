@@ -1,4 +1,5 @@
-import 'package:sqflite/sqflite.dart';
+import 'dart:io';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'models.dart';
@@ -11,19 +12,25 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('tenants_manager.db');
+    _database = await _initDB('residencia.db');
     return _database!;
   }
 
   Future<Database> _initDB(String filePath) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final path = join(directory.path, filePath);
-
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+      final directory = await getApplicationDocumentsDirectory();
+      final path = join(directory.path, filePath);
+      return await openDatabase(path, version: 1, onCreate: _createDB);
+    } else {
+      final dbPath = await getDatabasesPath();
+      final path = join(dbPath, filePath);
+      return await openDatabase(path, version: 1, onCreate: _createDB);
+    }
   }
 
   Future _createDB(Database db, int version) async {
-    // Tenants table
     await db.execute('''
       CREATE TABLE tenants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +43,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Room registrations table
     await db.execute('''
       CREATE TABLE registrations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,27 +55,7 @@ class DatabaseHelper {
     ''');
   }
 
-  // Retrieve distinct document types
-  Future<List<String>> getDistinctDocTypes() async {
-    final db = await instance.database;
-    final result = await db.rawQuery(
-      'SELECT DISTINCT doc_type FROM tenants WHERE is_deleted = 0 AND doc_type IS NOT NULL AND doc_type != "" ORDER BY doc_type ASC',
-    );
-
-    return result.map((row) => row['doc_type'] as String).toList();
-  }
-
-  // Retrieve distinct nationalities
-  Future<List<String>> getDistinctNationalities() async {
-    final db = await instance.database;
-    final result = await db.rawQuery(
-      'SELECT DISTINCT nationality FROM tenants WHERE is_deleted = 0 AND nationality IS NOT NULL AND nationality != "" ORDER BY nationality ASC',
-    );
-    return result.map((row) => row['nationality'] as String).toList();
-  }
-
-  // CRUD TENANTS
-
+  // CRUD Tenants
   Future<int> createTenant(Tenant tenant) async {
     final db = await instance.database;
     return await db.insert('tenants', tenant.toMap());
@@ -77,7 +63,6 @@ class DatabaseHelper {
 
   Future<List<Tenant>> readAllTenants() async {
     final db = await instance.database;
-    // Filter out soft-deleted records
     final result = await db.query(
       'tenants',
       where: 'is_deleted = 0',
@@ -98,7 +83,6 @@ class DatabaseHelper {
 
   Future<int> deleteTenant(int id) async {
     final db = await instance.database;
-    // Soft Delete: Update flag instead of removing row
     return await db.update(
       'tenants',
       {'is_deleted': 1},
@@ -119,8 +103,25 @@ class DatabaseHelper {
     return result.map((json) => Tenant.fromMap(json)).toList();
   }
 
-  // CRUD REGISTRATIONS
+  // HELPERS
 
+  Future<List<String>> getDistinctDocTypes() async {
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      "SELECT DISTINCT doc_type FROM tenants WHERE is_deleted = 0 AND doc_type IS NOT NULL AND doc_type != '' ORDER BY doc_type ASC",
+    );
+    return result.map((row) => row['doc_type'] as String).toList();
+  }
+
+  Future<List<String>> getDistinctNationalities() async {
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      "SELECT DISTINCT nationality FROM tenants WHERE is_deleted = 0 AND nationality IS NOT NULL AND nationality != '' ORDER BY nationality ASC",
+    );
+    return result.map((row) => row['nationality'] as String).toList();
+  }
+
+  // CRUD Registrations
   Future<int> createRegistration(RoomRegistration reg) async {
     final db = await instance.database;
     return await db.insert('registrations', reg.toMap());
@@ -149,12 +150,48 @@ class DatabaseHelper {
 
   Future<int> deleteRegistration(int id) async {
     final db = await instance.database;
-    // Soft delete
     return await db.update(
       'registrations',
       {'is_deleted': 1},
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // HELPERS
+
+  // Check if tenant exists (to prevent duplicates)
+  Future<int?> getTenantIdByDoc(String docNumber) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'tenants',
+      columns: ['id'],
+      where: 'doc_number = ? AND is_deleted = 0',
+      whereArgs: [docNumber],
+      limit: 1,
+    );
+    if (result.isNotEmpty) {
+      return result.first['id'] as int;
+    }
+    return null;
+  }
+
+  // Get Join data for Export
+  Future<List<Map<String, dynamic>>> getAllRegistrationsForExport() async {
+    final db = await instance.database;
+    // We select tenant_id as well as the descriptive columns
+    return await db.rawQuery('''
+      SELECT 
+        r.room_number, 
+        r.check_in_date, 
+        t.id as tenant_id,
+        t.first_name,
+        t.last_name,
+        t.doc_type,
+        t.doc_number 
+      FROM registrations r
+      INNER JOIN tenants t ON r.tenant_id = t.id
+      WHERE r.is_deleted = 0 AND t.is_deleted = 0
+    ''');
   }
 }
