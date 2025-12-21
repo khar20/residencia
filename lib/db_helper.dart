@@ -105,4 +105,25 @@ class DatabaseHelper {
     );
     return result.map((json) => RoomRegistration.fromMap(json)).toList();
   }
+
+  Future<int> updateRegistration(RoomRegistration reg) async {
+    final db = await instance.database;
+    return db.update(
+      'registrations',
+      reg.toMap(),
+      where: 'id = ?',
+      whereArgs: [reg.id],
+    );
+  }
+
+  Future<int> deleteRegistration(int id) async {
+    final db = await instance.database;
+    // Soft delete
+    return await db.update(
+      'registrations',
+      {'is_deleted': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }
