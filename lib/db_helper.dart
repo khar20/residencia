@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'models.dart';
@@ -56,21 +55,20 @@ class DatabaseHelper {
     ''');
   }
 
-  // --- NEW: Clear Database (For full replacement) ---
+  // Clear Database
   Future<void> clearAllData() async {
     final db = await instance.database;
     await db.transaction((txn) async {
-      // Delete all rows
       await txn.delete('registrations');
       await txn.delete('tenants');
-      // Optional: Reset the Auto-Increment counters so IDs start from 1 again
+
       await txn.rawDelete(
-        'DELETE FROM sqlite_sequence WHERE name="tenants" OR name="registrations"',
+        "DELETE FROM sqlite_sequence WHERE name='tenants' OR name='registrations'",
       );
     });
   }
 
-  // --- CRUD Tenants ---
+  // CRUD Tenants
   Future<int> createTenant(Tenant tenant) async {
     final db = await instance.database;
     return await db.insert('tenants', tenant.toMap());
@@ -81,7 +79,7 @@ class DatabaseHelper {
     final result = await db.query(
       'tenants',
       where: 'is_deleted = 0',
-      orderBy: 'last_name ASC',
+      orderBy: 'id DESC',
     );
     return result.map((json) => Tenant.fromMap(json)).toList();
   }
@@ -113,7 +111,7 @@ class DatabaseHelper {
       where:
           'is_deleted = 0 AND (first_name LIKE ? OR last_name LIKE ? OR doc_number LIKE ?)',
       whereArgs: ['%$keyword%', '%$keyword%', '%$keyword%'],
-      orderBy: 'last_name ASC',
+      orderBy: 'id DESC',
     );
     return result.map((json) => Tenant.fromMap(json)).toList();
   }
@@ -173,10 +171,7 @@ class DatabaseHelper {
     );
   }
 
-  // --- IMPORT/EXPORT HELPERS ---
-
-  // Note: getTenantIdByDoc is still useful but less critical if we wipe DB,
-  // but we keep it in case you switch strategies later.
+  // IMPORT/EXPORT HELPERS
   Future<int?> getTenantIdByDoc(String docNumber) async {
     final db = await instance.database;
     final result = await db.query(

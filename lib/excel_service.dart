@@ -27,6 +27,9 @@ class ExcelService {
     ]);
 
     List<Tenant> tenants = await db.readAllTenants();
+
+    tenants.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
+
     for (var t in tenants) {
       sheetTenants.appendRow([
         IntCellValue(t.id!),
@@ -78,7 +81,14 @@ class ExcelService {
 
     try {
       File file = File(result.files.single.path!);
-      var bytes = await file.readAsBytes();
+
+      List<int> bytes;
+      try {
+        bytes = await file.readAsBytes();
+      } on FileSystemException catch (e) {
+        return "Error: ${e.message}";
+      }
+
       var excel = Excel.decodeBytes(bytes);
       final db = DatabaseHelper.instance;
 
