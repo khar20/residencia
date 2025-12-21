@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../db_helper.dart'; // Adjust path if files are in different folders
-import '../models.dart'; // Adjust path if files are in different folders
+import '../db_helper.dart';
+import '../models.dart';
 
 class RegistrationScreen extends StatefulWidget {
   final Tenant tenant;
@@ -26,6 +26,37 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         widget.tenant.id!,
       );
     });
+  }
+
+  // Helper for Confirmation Dialogs
+  Future<bool> _showConfirmationDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    Color confirmColor = Colors.blue,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(content),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: confirmColor,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   // Unified Dialog for Adding and Editing
@@ -87,6 +118,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   onPressed: () async {
                     if (roomCtrl.text.isEmpty) return;
 
+                    // Confirmation before Editing
+                    if (isEditing) {
+                      final confirmEdit = await _showConfirmationDialog(
+                        title: 'Save Changes?',
+                        content:
+                            'Are you sure you want to update this registration?',
+                        confirmText: 'Update',
+                      );
+                      if (!confirmEdit) return;
+                    }
+
                     final reg = RoomRegistration(
                       id: existingReg?.id, // Preserve ID if editing
                       tenantId: widget.tenant.id!,
@@ -115,9 +157,19 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     );
   }
 
-  Future<void> _deleteRegistration(int id) async {
-    await DatabaseHelper.instance.deleteRegistration(id);
-    if (mounted) _refresh();
+  // Delete with confirmation
+  Future<void> _confirmAndDeleteRegistration(int id) async {
+    final confirmed = await _showConfirmationDialog(
+      title: 'Delete Registration',
+      content: 'Are you sure you want to remove this room history?',
+      confirmText: 'Delete',
+      confirmColor: Colors.red,
+    );
+
+    if (confirmed) {
+      await DatabaseHelper.instance.deleteRegistration(id);
+      if (mounted) _refresh();
+    }
   }
 
   @override
@@ -162,7 +214,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           if (value == 'edit') {
                             _showRegistrationForm(existingReg: reg);
                           } else if (value == 'delete') {
-                            await _deleteRegistration(reg.id!);
+                            await _confirmAndDeleteRegistration(reg.id!);
                           }
                         },
                         itemBuilder: (ctx) => [
@@ -170,7 +222,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             value: 'edit',
                             child: Row(
                               children: [
-                                Icon(Icons.edit, color: Colors.blue),
+                                Icon(Icons.edit),
                                 SizedBox(width: 8),
                                 Text('Edit'),
                               ],
@@ -180,12 +232,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             value: 'delete',
                             child: Row(
                               children: [
-                                Icon(Icons.delete, color: Colors.red),
+                                Icon(Icons.delete),
                                 SizedBox(width: 8),
-                                Text(
-                                  'Delete',
-                                  style: TextStyle(color: Colors.red),
-                                ),
+                                Text('Delete'),
                               ],
                             ),
                           ),

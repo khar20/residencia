@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../db_helper.dart'; // Adjust path
-import '../models.dart'; // Adjust path
-import '../excel_service.dart'; // Adjust path
-import 'registration_screen.dart'; // Import the screen created above
+import '../db_helper.dart';
+import '../models.dart';
+import '../excel_service.dart';
+import 'registration_screen.dart';
 
 class TenantListScreen extends StatefulWidget {
   const TenantListScreen({super.key});
@@ -34,6 +34,56 @@ class _TenantListScreenState extends State<TenantListScreen> {
     });
   }
 
+  // Helper for Confirmation Dialogs
+  Future<bool> _showConfirmationDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    Color confirmColor = Colors.blue,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(content),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: confirmColor,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(confirmText),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  // Logic to delete tenant with confirmation
+  Future<void> _confirmAndDeleteTenant(int id) async {
+    final confirmed = await _showConfirmationDialog(
+      title: 'Delete Tenant',
+      content:
+          'Are you sure you want to delete this tenant? This action cannot be undone.',
+      confirmText: 'Delete',
+      confirmColor: Colors.red,
+    );
+
+    if (confirmed) {
+      await DatabaseHelper.instance.deleteTenant(id);
+      if (mounted) {
+        // Refresh with current query to keep search results consistent
+        _refreshList(query: _searchController.text);
+      }
+    }
+  }
+
   // Dialog to choose Export method
   void _showExportDialog() {
     showDialog(
@@ -46,7 +96,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
             icon: const Icon(Icons.share),
             label: const Text('Share'),
             onPressed: () async {
-              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(ctx);
               await _excelService.shareExcel();
             },
           ),
@@ -54,7 +104,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
             icon: const Icon(Icons.save),
             label: const Text('Save to Device'),
             onPressed: () async {
-              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(ctx);
               String? path = await _excelService.saveToDevice();
 
               if (!mounted) return;
@@ -79,17 +129,14 @@ class _TenantListScreenState extends State<TenantListScreen> {
 
   // Add/Edit Dialog
   void _showForm({Tenant? tenant}) async {
-    // Controllers for simple text fields
     final fNameCtrl = TextEditingController(text: tenant?.firstName);
     final lNameCtrl = TextEditingController(text: tenant?.lastName);
     final docNumCtrl = TextEditingController(text: tenant?.docNumber);
 
-    // 1. Fetch history for Autocomplete fields
     final db = DatabaseHelper.instance;
     List<String> availableDocTypes = await db.getDistinctDocTypes();
     List<String> availableNationalities = await db.getDistinctNationalities();
 
-    // 2. Variables to track Autocomplete values
     String currentDocType = tenant?.docType ?? '';
     String currentNationality = tenant?.nationality ?? '';
 
@@ -107,7 +154,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            // Helper to clear error when user types
             void clearError(String field) {
               setStateDialog(() {
                 if (field == 'fname') fNameError = null;
@@ -124,7 +170,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // FIRST NAME
                     TextField(
                       controller: fNameCtrl,
                       decoration: InputDecoration(
@@ -133,8 +178,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       ),
                       onChanged: (_) => clearError('fname'),
                     ),
-
-                    // LAST NAME
                     TextField(
                       controller: lNameCtrl,
                       decoration: InputDecoration(
@@ -143,10 +186,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       ),
                       onChanged: (_) => clearError('lname'),
                     ),
-
                     const SizedBox(height: 10),
-
-                    // DOCUMENT TYPE (Autocomplete)
                     Autocomplete<String>(
                       initialValue: TextEditingValue(text: currentDocType),
                       optionsBuilder: (TextEditingValue textEditingValue) {
@@ -186,8 +226,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                             );
                           },
                     ),
-
-                    // DOCUMENT NUMBER
                     TextField(
                       controller: docNumCtrl,
                       decoration: InputDecoration(
@@ -196,8 +234,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       ),
                       onChanged: (_) => clearError('docNum'),
                     ),
-
-                    // NATIONALITY (Autocomplete - UPDATED)
                     Autocomplete<String>(
                       initialValue: TextEditingValue(text: currentNationality),
                       optionsBuilder: (TextEditingValue textEditingValue) {
@@ -249,7 +285,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
                   onPressed: () async {
                     // VALIDATION LOGIC
                     bool isValid = true;
-
                     setStateDialog(() {
                       fNameError = null;
                       lNameError = null;
@@ -281,13 +316,23 @@ class _TenantListScreenState extends State<TenantListScreen> {
 
                     if (!isValid) return;
 
+                    // Confirmation before Editing
+                    if (tenant != null) {
+                      final confirmEdit = await _showConfirmationDialog(
+                        title: 'Save Changes?',
+                        content: 'Are you sure you want to update this tenant?',
+                        confirmText: 'Update',
+                      );
+                      if (!confirmEdit) return;
+                    }
+
                     // SAVE
                     final newTenant = Tenant(
                       id: tenant?.id,
                       firstName: fNameCtrl.text.trim(),
                       lastName: lNameCtrl.text.trim(),
-                      nationality: currentNationality.trim(), // Use variable
-                      docType: currentDocType.trim(), // Use variable
+                      nationality: currentNationality.trim(),
+                      docType: currentDocType.trim(),
                       docNumber: docNumCtrl.text.trim(),
                     );
 
@@ -316,7 +361,6 @@ class _TenantListScreenState extends State<TenantListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // Toggle between Title and TextField based on state
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -331,25 +375,20 @@ class _TenantListScreenState extends State<TenantListScreen> {
               )
             : const Text('Tenant Manager'),
         actions: [
-          // Search Icon / Close Search Icon
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
             onPressed: () {
               setState(() {
                 if (_isSearching) {
-                  // Stop searching
                   _isSearching = false;
                   _searchController.clear();
                   _refreshList();
                 } else {
-                  // Start searching
                   _isSearching = true;
                 }
               });
             },
           ),
-
-          // Hide these buttons while searching to save space
           if (!_isSearching) ...[
             IconButton(
               icon: const Icon(Icons.upload_file),
@@ -416,20 +455,28 @@ class _TenantListScreenState extends State<TenantListScreen> {
                       if (value == 'edit') {
                         _showForm(tenant: t);
                       } else if (value == 'delete') {
-                        await DatabaseHelper.instance.deleteTenant(t.id!);
-                        // Refresh with current query to keep search results consistent
-                        if (mounted) {
-                          _refreshList(query: _searchController.text);
-                        }
+                        await _confirmAndDeleteTenant(t.id!);
                       }
                     },
                     itemBuilder: (ctx) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit),
+                            SizedBox(width: 8),
+                            Text('Edit'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: 'delete',
-                        child: Text(
-                          'Delete',
-                          style: TextStyle(color: Colors.red),
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete),
+                            SizedBox(width: 8),
+                            Text('Delete'),
+                          ],
                         ),
                       ),
                     ],
