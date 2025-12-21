@@ -6,9 +6,15 @@ import 'excel_service.dart';
 
 void main() {
   runApp(
-    const MaterialApp(
+    MaterialApp(
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue).copyWith(
+          surface: Colors.white, // Background of cards
+        ),
+      ),
       debugShowCheckedModeBanner: false,
-      home: TenantListScreen(),
+      home: const TenantListScreen(),
     ),
   );
 }
@@ -24,15 +30,22 @@ class _TenantListScreenState extends State<TenantListScreen> {
   late Future<List<Tenant>> _tenantList;
   final ExcelService _excelService = ExcelService();
 
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _refreshList();
   }
 
-  void _refreshList() {
+  void _refreshList({String query = ''}) {
     setState(() {
-      _tenantList = DatabaseHelper.instance.readAllTenants();
+      if (query.isEmpty) {
+        _tenantList = DatabaseHelper.instance.readAllTenants();
+      } else {
+        _tenantList = DatabaseHelper.instance.searchTenants(query);
+      }
     });
   }
 
@@ -80,20 +93,27 @@ class _TenantListScreenState extends State<TenantListScreen> {
   }
 
   // Add/Edit Dialog
-  // --- Replace the _showForm method in _TenantListScreenState ---
-
   void _showForm({Tenant? tenant}) async {
+    // Controllers for simple text fields
     final fNameCtrl = TextEditingController(text: tenant?.firstName);
     final lNameCtrl = TextEditingController(text: tenant?.lastName);
-    final natCtrl = TextEditingController(text: tenant?.nationality);
     final docNumCtrl = TextEditingController(text: tenant?.docNumber);
 
-    // 1. Fetch available types from DB (History + Defaults)
-    List<String> availableDocTypes = await DatabaseHelper.instance
-        .getDistinctDocTypes();
+    // 1. Fetch history for Autocomplete fields
+    final db = DatabaseHelper.instance;
+    List<String> availableDocTypes = await db.getDistinctDocTypes();
+    List<String> availableNationalities = await db.getDistinctNationalities();
 
-    // Variable to store the final value (initially the current value or default)
-    String currentDocType = tenant?.docType ?? 'ID Card';
+    // 2. Variables to track Autocomplete values
+    String currentDocType = tenant?.docType ?? '';
+    String currentNationality = tenant?.nationality ?? '';
+
+    // Error State Variables
+    String? fNameError;
+    String? lNameError;
+    String? docTypeError;
+    String? docNumError;
+    String? natError;
 
     if (!mounted) return;
 
@@ -102,45 +122,61 @@ class _TenantListScreenState extends State<TenantListScreen> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            // Helper to clear error when user types
+            void clearError(String field) {
+              setStateDialog(() {
+                if (field == 'fname') fNameError = null;
+                if (field == 'lname') lNameError = null;
+                if (field == 'docNum') docNumError = null;
+                if (field == 'nat') natError = null;
+                if (field == 'docType') docTypeError = null;
+              });
+            }
+
             return AlertDialog(
               title: Text(tenant == null ? 'New Tenant' : 'Edit Tenant'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // FIRST NAME
                     TextField(
                       controller: fNameCtrl,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'First Name',
+                        errorText: fNameError,
                       ),
+                      onChanged: (_) => clearError('fname'),
                     ),
+
+                    // LAST NAME
                     TextField(
                       controller: lNameCtrl,
-                      decoration: const InputDecoration(labelText: 'Last Name'),
+                      decoration: InputDecoration(
+                        labelText: 'Last Name',
+                        errorText: lNameError,
+                      ),
+                      onChanged: (_) => clearError('lname'),
                     ),
+
                     const SizedBox(height: 10),
 
-                    // Autocomplete instead of Dropdown
+                    // DOCUMENT TYPE (Autocomplete)
                     Autocomplete<String>(
                       initialValue: TextEditingValue(text: currentDocType),
-
-                      // Define the options based on what the user types
                       optionsBuilder: (TextEditingValue textEditingValue) {
-                        if (textEditingValue.text == '') {
-                          return const Iterable<String>.empty();
-                        }
+                        if (textEditingValue.text == '')
+                          return availableDocTypes;
                         return availableDocTypes.where((String option) {
                           return option.toLowerCase().contains(
                             textEditingValue.text.toLowerCase(),
                           );
                         });
                       },
-
                       onSelected: (String selection) {
                         currentDocType = selection;
+                        clearError('docType');
                       },
-
-                      // The actual text field appearance
                       fieldViewBuilder:
                           (
                             context,
@@ -148,34 +184,71 @@ class _TenantListScreenState extends State<TenantListScreen> {
                             focusNode,
                             onFieldSubmitted,
                           ) {
-                            // Ensure our variable stays in sync if the user types manually
-                            textEditingController.addListener(() {
-                              currentDocType = textEditingController.text;
-                            });
-
                             return TextField(
                               controller: textEditingController,
                               focusNode: focusNode,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: 'Document Type',
-                                hintText: 'Select or type new...',
-                                suffixIcon: Icon(Icons.arrow_drop_down),
+                                hintText: 'e.g. DNI, Passport',
+                                suffixIcon: const Icon(Icons.arrow_drop_down),
+                                errorText: docTypeError,
                               ),
+                              onChanged: (text) {
+                                currentDocType = text;
+                                clearError('docType');
+                              },
                             );
                           },
                     ),
 
+                    // DOCUMENT NUMBER
                     TextField(
                       controller: docNumCtrl,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Document Number',
+                        errorText: docNumError,
                       ),
+                      onChanged: (_) => clearError('docNum'),
                     ),
-                    TextField(
-                      controller: natCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Nationality',
-                      ),
+
+                    // NATIONALITY (Autocomplete - UPDATED)
+                    Autocomplete<String>(
+                      initialValue: TextEditingValue(text: currentNationality),
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text == '')
+                          return availableNationalities;
+                        return availableNationalities.where((String option) {
+                          return option.toLowerCase().contains(
+                            textEditingValue.text.toLowerCase(),
+                          );
+                        });
+                      },
+                      onSelected: (String selection) {
+                        currentNationality = selection;
+                        clearError('nat');
+                      },
+                      fieldViewBuilder:
+                          (
+                            context,
+                            textEditingController,
+                            focusNode,
+                            onFieldSubmitted,
+                          ) {
+                            return TextField(
+                              controller: textEditingController,
+                              focusNode: focusNode,
+                              decoration: InputDecoration(
+                                labelText: 'Nationality',
+                                hintText: 'e.g. Peru, USA',
+                                suffixIcon: const Icon(Icons.arrow_drop_down),
+                                errorText: natError,
+                              ),
+                              onChanged: (text) {
+                                currentNationality = text;
+                                clearError('nat');
+                              },
+                            );
+                          },
                     ),
                   ],
                 ),
@@ -187,23 +260,48 @@ class _TenantListScreenState extends State<TenantListScreen> {
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    if (fNameCtrl.text.isEmpty || docNumCtrl.text.isEmpty) {
-                      return;
-                    }
+                    // VALIDATION LOGIC
+                    bool isValid = true;
 
-                    // Validate that doc type isn't empty
-                    if (currentDocType.trim().isEmpty) {
-                      currentDocType = 'ID Card'; // Fallback
-                    }
+                    setStateDialog(() {
+                      fNameError = null;
+                      lNameError = null;
+                      docTypeError = null;
+                      docNumError = null;
+                      natError = null;
 
+                      if (fNameCtrl.text.trim().isEmpty) {
+                        fNameError = 'Required';
+                        isValid = false;
+                      }
+                      if (lNameCtrl.text.trim().isEmpty) {
+                        lNameError = 'Required';
+                        isValid = false;
+                      }
+                      if (currentDocType.trim().isEmpty) {
+                        docTypeError = 'Required';
+                        isValid = false;
+                      }
+                      if (docNumCtrl.text.trim().isEmpty) {
+                        docNumError = 'Required';
+                        isValid = false;
+                      }
+                      if (currentNationality.trim().isEmpty) {
+                        natError = 'Required';
+                        isValid = false;
+                      }
+                    });
+
+                    if (!isValid) return;
+
+                    // SAVE
                     final newTenant = Tenant(
                       id: tenant?.id,
-                      firstName: fNameCtrl.text,
-                      lastName: lNameCtrl.text,
-                      nationality: natCtrl.text,
-                      docType:
-                          currentDocType, // Uses the variable from Autocomplete
-                      docNumber: docNumCtrl.text,
+                      firstName: fNameCtrl.text.trim(),
+                      lastName: lNameCtrl.text.trim(),
+                      nationality: currentNationality.trim(), // Use variable
+                      docType: currentDocType.trim(), // Use variable
+                      docNumber: docNumCtrl.text.trim(),
                     );
 
                     if (tenant == null) {
@@ -231,28 +329,59 @@ class _TenantListScreenState extends State<TenantListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tenant Manager'),
+        // Toggle between Title and TextField based on state
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search name or document...',
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) {
+                  _refreshList(query: value);
+                },
+              )
+            : const Text('Tenant Manager'),
         actions: [
+          // Search Icon / Close Search Icon
           IconButton(
-            icon: const Icon(Icons.upload_file),
-            tooltip: "Import Excel",
-            onPressed: () async {
-              await _excelService.importFromExcel();
-
-              // Check 'context.mounted' directly to satisfy the linter
-              if (!context.mounted) return;
-
-              _refreshList();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Import Successful')),
-              );
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  // Stop searching
+                  _isSearching = false;
+                  _searchController.clear();
+                  _refreshList();
+                } else {
+                  // Start searching
+                  _isSearching = true;
+                }
+              });
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.download),
-            tooltip: "Export Excel",
-            onPressed: () => _showExportDialog(),
-          ),
+
+          // Hide these buttons while searching to save space
+          if (!_isSearching) ...[
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              tooltip: "Import Excel",
+              onPressed: () async {
+                await _excelService.importFromExcel();
+                if (!context.mounted) return;
+                _refreshList();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Import Successful')),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.download),
+              tooltip: "Export Excel",
+              onPressed: () => _showExportDialog(),
+            ),
+          ],
         ],
       ),
       body: FutureBuilder<List<Tenant>>(
@@ -262,7 +391,13 @@ class _TenantListScreenState extends State<TenantListScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.data!.isEmpty) {
-            return const Center(child: Text('No tenants found.'));
+            return Center(
+              child: Text(
+                _isSearching
+                    ? 'No matches found.'
+                    : 'No tenants found. Add one!',
+              ),
+            );
           }
 
           return ListView.builder(
@@ -295,8 +430,10 @@ class _TenantListScreenState extends State<TenantListScreen> {
                         _showForm(tenant: t);
                       } else if (value == 'delete') {
                         await DatabaseHelper.instance.deleteTenant(t.id!);
-                        // Safe to use 'mounted' here as we aren't using 'context'
-                        if (mounted) _refreshList();
+                        // Refresh with current query to keep search results consistent
+                        if (mounted) {
+                          _refreshList(query: _searchController.text);
+                        }
                       }
                     },
                     itemBuilder: (ctx) => [
@@ -318,7 +455,16 @@ class _TenantListScreenState extends State<TenantListScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         child: const Icon(Icons.person_add),
-        onPressed: () => _showForm(),
+        onPressed: () {
+          if (_isSearching) {
+            setState(() {
+              _isSearching = false;
+              _searchController.clear();
+              _refreshList();
+            });
+          }
+          _showForm();
+        },
       ),
     );
   }

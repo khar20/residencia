@@ -53,20 +53,19 @@ class DatabaseHelper {
   Future<List<String>> getDistinctDocTypes() async {
     final db = await instance.database;
     final result = await db.rawQuery(
-      'SELECT DISTINCT doc_type FROM tenants WHERE is_deleted = 0 ORDER BY doc_type ASC',
+      'SELECT DISTINCT doc_type FROM tenants WHERE is_deleted = 0 AND doc_type IS NOT NULL AND doc_type != "" ORDER BY doc_type ASC',
     );
 
-    List<String> types = result
-        .map((row) => row['doc_type'] as String)
-        .toList();
+    return result.map((row) => row['doc_type'] as String).toList();
+  }
 
-    final defaults = ['ID Card', 'Passport', 'Driver License', 'Other'];
-    for (var def in defaults) {
-      if (!types.contains(def)) {
-        types.add(def);
-      }
-    }
-    return types;
+  // Retrieve distinct nationalities
+  Future<List<String>> getDistinctNationalities() async {
+    final db = await instance.database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT nationality FROM tenants WHERE is_deleted = 0 AND nationality IS NOT NULL AND nationality != "" ORDER BY nationality ASC',
+    );
+    return result.map((row) => row['nationality'] as String).toList();
   }
 
   // CRUD TENANTS
@@ -106,6 +105,18 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<List<Tenant>> searchTenants(String keyword) async {
+    final db = await instance.database;
+    final result = await db.query(
+      'tenants',
+      where:
+          'is_deleted = 0 AND (first_name LIKE ? OR last_name LIKE ? OR doc_number LIKE ?)',
+      whereArgs: ['%$keyword%', '%$keyword%', '%$keyword%'],
+      orderBy: 'last_name ASC',
+    );
+    return result.map((json) => Tenant.fromMap(json)).toList();
   }
 
   // CRUD REGISTRATIONS
