@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../db_helper.dart';
 import '../models.dart';
 import '../excel_service.dart';
+import '../utils/dialogs.dart';
 import 'registration_screen.dart';
 
 class TenantListScreen extends StatefulWidget {
@@ -12,11 +13,10 @@ class TenantListScreen extends StatefulWidget {
 }
 
 class _TenantListScreenState extends State<TenantListScreen> {
-  late Future<List<Tenant>> _tenantList;
+  late Future<List<Tenant>> _tenantListFuture;
   final ExcelService _excelService = ExcelService();
-
-  bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
+  bool _isSearching = false;
 
   @override
   void initState() {
@@ -24,50 +24,23 @@ class _TenantListScreenState extends State<TenantListScreen> {
     _refreshList();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _refreshList({String query = ''}) {
     setState(() {
-      if (query.isEmpty) {
-        _tenantList = DatabaseHelper.instance.readAllTenants();
-      } else {
-        _tenantList = DatabaseHelper.instance.searchTenants(query);
-      }
+      _tenantListFuture = query.isEmpty
+          ? DatabaseHelper.instance.readAllTenants()
+          : DatabaseHelper.instance.searchTenants(query);
     });
   }
 
-  // Helper for Confirmation Dialogs
-  Future<bool> _showConfirmationDialog({
-    required String title,
-    required String content,
-    required String confirmText,
-    Color confirmColor = Colors.blue,
-  }) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(title),
-            content: Text(content),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: confirmColor,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(confirmText),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
-  // Logic to delete tenant with confirmation
   Future<void> _confirmAndDeleteTenant(int id) async {
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await showConfirmationDialog(
+      context: context,
       title: 'Delete Tenant',
       content:
           'Are you sure you want to delete this tenant? This action cannot be undone.',
@@ -77,14 +50,10 @@ class _TenantListScreenState extends State<TenantListScreen> {
 
     if (confirmed) {
       await DatabaseHelper.instance.deleteTenant(id);
-      if (mounted) {
-        // Refresh with current query to keep search results consistent
-        _refreshList(query: _searchController.text);
-      }
+      if (mounted) _refreshList(query: _searchController.text);
     }
   }
 
-  // Dialog to choose Export method
   void _showExportDialog() {
     showDialog(
       context: context,
@@ -107,19 +76,15 @@ class _TenantListScreenState extends State<TenantListScreen> {
               Navigator.pop(ctx);
               String? path = await _excelService.saveToDevice();
 
-              if (!mounted) return;
+              if (!ctx.mounted) return;
 
-              if (path != null) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Saved to: $path')));
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to save file. Try Sharing instead.'),
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    path != null ? 'Saved to: $path' : 'Failed to save file.',
                   ),
-                );
-              }
+                ),
+              );
             },
           ),
         ],
@@ -127,232 +92,31 @@ class _TenantListScreenState extends State<TenantListScreen> {
     );
   }
 
-  // Add/Edit Dialog
-  void _showForm({Tenant? tenant}) async {
-    final fNameCtrl = TextEditingController(text: tenant?.firstName);
-    final lNameCtrl = TextEditingController(text: tenant?.lastName);
-    final docNumCtrl = TextEditingController(text: tenant?.docNumber);
+  void _openTenantForm({Tenant? tenant}) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => TenantFormDialog(tenant: tenant),
+    );
 
-    final db = DatabaseHelper.instance;
-    List<String> availableDocTypes = await db.getDistinctDocTypes();
-    List<String> availableNationalities = await db.getDistinctNationalities();
+    if (result == true && mounted) {
+      _refreshList();
+    }
+  }
 
-    String currentDocType = tenant?.docType ?? '';
-    String currentNationality = tenant?.nationality ?? '';
+  void _importExcel() async {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Importing... please wait')));
 
-    // Error State Variables
-    String? fNameError;
-    String? lNameError;
-    String? docTypeError;
-    String? docNumError;
-    String? natError;
+    final message = await _excelService.importFromExcel();
 
     if (!mounted) return;
+    _refreshList();
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            void clearError(String field) {
-              setStateDialog(() {
-                if (field == 'fname') fNameError = null;
-                if (field == 'lname') lNameError = null;
-                if (field == 'docNum') docNumError = null;
-                if (field == 'nat') natError = null;
-                if (field == 'docType') docTypeError = null;
-              });
-            }
-
-            return AlertDialog(
-              title: Text(tenant == null ? 'New Tenant' : 'Edit Tenant'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: fNameCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'First Name',
-                        errorText: fNameError,
-                      ),
-                      onChanged: (_) => clearError('fname'),
-                    ),
-                    TextField(
-                      controller: lNameCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Last Name',
-                        errorText: lNameError,
-                      ),
-                      onChanged: (_) => clearError('lname'),
-                    ),
-                    const SizedBox(height: 10),
-                    Autocomplete<String>(
-                      initialValue: TextEditingValue(text: currentDocType),
-                      optionsBuilder: (TextEditingValue textEditingValue) {
-                        if (textEditingValue.text == '') {
-                          return availableDocTypes;
-                        }
-                        return availableDocTypes.where((String option) {
-                          return option.toLowerCase().contains(
-                            textEditingValue.text.toLowerCase(),
-                          );
-                        });
-                      },
-                      onSelected: (String selection) {
-                        currentDocType = selection;
-                        clearError('docType');
-                      },
-                      fieldViewBuilder:
-                          (
-                            context,
-                            textEditingController,
-                            focusNode,
-                            onFieldSubmitted,
-                          ) {
-                            return TextField(
-                              controller: textEditingController,
-                              focusNode: focusNode,
-                              decoration: InputDecoration(
-                                labelText: 'Document Type',
-                                suffixIcon: const Icon(Icons.arrow_drop_down),
-                                errorText: docTypeError,
-                              ),
-                              onChanged: (text) {
-                                currentDocType = text;
-                                clearError('docType');
-                              },
-                            );
-                          },
-                    ),
-                    TextField(
-                      controller: docNumCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Document Number',
-                        errorText: docNumError,
-                      ),
-                      onChanged: (_) => clearError('docNum'),
-                    ),
-                    Autocomplete<String>(
-                      initialValue: TextEditingValue(text: currentNationality),
-                      optionsBuilder: (TextEditingValue textEditingValue) {
-                        if (textEditingValue.text == '') {
-                          return availableNationalities;
-                        }
-                        return availableNationalities.where((String option) {
-                          return option.toLowerCase().contains(
-                            textEditingValue.text.toLowerCase(),
-                          );
-                        });
-                      },
-                      onSelected: (String selection) {
-                        currentNationality = selection;
-                        clearError('nat');
-                      },
-                      fieldViewBuilder:
-                          (
-                            context,
-                            textEditingController,
-                            focusNode,
-                            onFieldSubmitted,
-                          ) {
-                            return TextField(
-                              controller: textEditingController,
-                              focusNode: focusNode,
-                              decoration: InputDecoration(
-                                labelText: 'Nationality',
-                                suffixIcon: const Icon(Icons.arrow_drop_down),
-                                errorText: natError,
-                              ),
-                              onChanged: (text) {
-                                currentNationality = text;
-                                clearError('nat');
-                              },
-                            );
-                          },
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    // VALIDATION LOGIC
-                    bool isValid = true;
-                    setStateDialog(() {
-                      fNameError = null;
-                      lNameError = null;
-                      docTypeError = null;
-                      docNumError = null;
-                      natError = null;
-
-                      if (fNameCtrl.text.trim().isEmpty) {
-                        fNameError = 'Required';
-                        isValid = false;
-                      }
-                      if (lNameCtrl.text.trim().isEmpty) {
-                        lNameError = 'Required';
-                        isValid = false;
-                      }
-                      if (currentDocType.trim().isEmpty) {
-                        docTypeError = 'Required';
-                        isValid = false;
-                      }
-                      if (docNumCtrl.text.trim().isEmpty) {
-                        docNumError = 'Required';
-                        isValid = false;
-                      }
-                      if (currentNationality.trim().isEmpty) {
-                        natError = 'Required';
-                        isValid = false;
-                      }
-                    });
-
-                    if (!isValid) return;
-
-                    // Confirmation before Editing
-                    if (tenant != null) {
-                      final confirmEdit = await _showConfirmationDialog(
-                        title: 'Save Changes?',
-                        content: 'Are you sure you want to update this tenant?',
-                        confirmText: 'Update',
-                      );
-                      if (!confirmEdit) return;
-                    }
-
-                    // SAVE
-                    final newTenant = Tenant(
-                      id: tenant?.id,
-                      firstName: fNameCtrl.text.trim(),
-                      lastName: lNameCtrl.text.trim(),
-                      nationality: currentNationality.trim(),
-                      docType: currentDocType.trim(),
-                      docNumber: docNumCtrl.text.trim(),
-                    );
-
-                    if (tenant == null) {
-                      await DatabaseHelper.instance.createTenant(newTenant);
-                    } else {
-                      await DatabaseHelper.instance.updateTenant(newTenant);
-                    }
-
-                    if (!dialogContext.mounted) return;
-                    Navigator.pop(dialogContext);
-
-                    if (mounted) _refreshList();
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -367,9 +131,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
                   hintText: 'Search name or document...',
                   border: InputBorder.none,
                 ),
-                onChanged: (value) {
-                  _refreshList(query: value);
-                },
+                onChanged: (value) => _refreshList(query: value),
               )
             : const Text('Tenant Manager'),
         actions: [
@@ -391,30 +153,24 @@ class _TenantListScreenState extends State<TenantListScreen> {
             IconButton(
               icon: const Icon(Icons.upload_file),
               tooltip: "Import Excel",
-              onPressed: () async {
-                await _excelService.importFromExcel();
-                if (!context.mounted) return;
-                _refreshList();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Import Successful')),
-                );
-              },
+              onPressed: _importExcel,
             ),
             IconButton(
               icon: const Icon(Icons.download),
               tooltip: "Export Excel",
-              onPressed: () => _showExportDialog(),
+              onPressed: _showExportDialog,
             ),
           ],
         ],
       ),
       body: FutureBuilder<List<Tenant>>(
-        future: _tenantList,
+        future: _tenantListFuture,
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.data!.isEmpty) {
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return Center(
               child: Text(
                 _isSearching
@@ -424,10 +180,13 @@ class _TenantListScreenState extends State<TenantListScreen> {
             );
           }
 
+          final tenants = snapshot.data!;
+
           return ListView.builder(
-            itemCount: snapshot.data!.length,
+            itemCount: tenants.length,
+            itemExtent: 95.0,
             itemBuilder: (context, index) {
-              final t = snapshot.data![index];
+              final t = tenants[index];
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
@@ -439,7 +198,9 @@ class _TenantListScreenState extends State<TenantListScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    '${t.docType}: ${t.docNumber} \nNationality: ${t.nationality}',
+                    '${t.docType}: ${t.docNumber}\n${t.nationality}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   isThreeLine: true,
                   onTap: () => Navigator.push(
@@ -449,11 +210,11 @@ class _TenantListScreenState extends State<TenantListScreen> {
                     ),
                   ),
                   trailing: PopupMenuButton(
-                    onSelected: (value) async {
+                    onSelected: (value) {
                       if (value == 'edit') {
-                        _showForm(tenant: t);
+                        _openTenantForm(tenant: t);
                       } else if (value == 'delete') {
-                        await _confirmAndDeleteTenant(t.id!);
+                        _confirmAndDeleteTenant(t.id!);
                       }
                     },
                     itemBuilder: (ctx) => [
@@ -495,9 +256,191 @@ class _TenantListScreenState extends State<TenantListScreen> {
               _refreshList();
             });
           }
-          _showForm();
+          _openTenantForm();
         },
       ),
+    );
+  }
+}
+
+class TenantFormDialog extends StatefulWidget {
+  final Tenant? tenant;
+
+  const TenantFormDialog({super.key, this.tenant});
+
+  @override
+  State<TenantFormDialog> createState() => _TenantFormDialogState();
+}
+
+class _TenantFormDialogState extends State<TenantFormDialog> {
+  late TextEditingController fNameCtrl;
+  late TextEditingController lNameCtrl;
+  late TextEditingController docNumCtrl;
+
+  String currentDocType = '';
+  String currentNationality = '';
+
+  List<String> availableDocTypes = [];
+  List<String> availableNationalities = [];
+
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    fNameCtrl = TextEditingController(text: widget.tenant?.firstName);
+    lNameCtrl = TextEditingController(text: widget.tenant?.lastName);
+    docNumCtrl = TextEditingController(text: widget.tenant?.docNumber);
+    currentDocType = widget.tenant?.docType ?? '';
+    currentNationality = widget.tenant?.nationality ?? '';
+
+    _loadSuggestions();
+  }
+
+  void _loadSuggestions() async {
+    final db = DatabaseHelper.instance;
+    final docs = await db.getDistinctDocTypes();
+    final nats = await db.getDistinctNationalities();
+
+    if (mounted) {
+      setState(() {
+        availableDocTypes = docs;
+        availableNationalities = nats;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    fNameCtrl.dispose();
+    lNameCtrl.dispose();
+    docNumCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (currentDocType.trim().isEmpty || currentNationality.trim().isEmpty) {
+      setState(() {});
+      return;
+    }
+
+    if (widget.tenant != null) {
+      final confirm = await showConfirmationDialog(
+        context: context,
+        title: 'Save Changes?',
+        content: 'Update this tenant?',
+        confirmText: 'Update',
+      );
+      if (!confirm) return;
+    }
+
+    final newTenant = Tenant(
+      id: widget.tenant?.id,
+      firstName: fNameCtrl.text.trim(),
+      lastName: lNameCtrl.text.trim(),
+      nationality: currentNationality.trim(),
+      docType: currentDocType.trim(),
+      docNumber: docNumCtrl.text.trim(),
+    );
+
+    if (widget.tenant == null) {
+      await DatabaseHelper.instance.createTenant(newTenant);
+    } else {
+      await DatabaseHelper.instance.updateTenant(newTenant);
+    }
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.tenant == null ? 'New Tenant' : 'Edit Tenant'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: fNameCtrl,
+                decoration: const InputDecoration(labelText: 'First Name'),
+                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+              ),
+
+              TextFormField(
+                controller: lNameCtrl,
+                decoration: const InputDecoration(labelText: 'Last Name'),
+                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+              ),
+
+              _buildAutocomplete(
+                label: 'Document Type',
+                initialValue: currentDocType,
+                options: availableDocTypes,
+                onChanged: (val) => currentDocType = val,
+              ),
+
+              TextFormField(
+                controller: docNumCtrl,
+                decoration: const InputDecoration(labelText: 'Document Number'),
+                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+              ),
+
+              _buildAutocomplete(
+                label: 'Nationality',
+                initialValue: currentNationality,
+                options: availableNationalities,
+                onChanged: (val) => currentNationality = val,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+
+  Widget _buildAutocomplete({
+    required String label,
+    required String initialValue,
+    required List<String> options,
+    required Function(String) onChanged,
+  }) {
+    return Autocomplete<String>(
+      initialValue: TextEditingValue(text: initialValue),
+      optionsBuilder: (TextEditingValue textEditingValue) {
+        if (textEditingValue.text == '') return options;
+        return options.where((String option) {
+          return option.toLowerCase().contains(
+            textEditingValue.text.toLowerCase(),
+          );
+        });
+      },
+      onSelected: onChanged,
+      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+        return TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          decoration: InputDecoration(
+            labelText: label,
+            suffixIcon: const Icon(Icons.arrow_drop_down),
+          ),
+          onChanged: (val) {
+            onChanged(val);
+          },
+          validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+        );
+      },
     );
   }
 }
