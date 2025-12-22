@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path/path.dart' as p;
+import 'package:intl/intl.dart';
 import 'db_helper.dart';
 import 'models.dart';
 
@@ -92,12 +93,12 @@ class ExcelService {
       var excel = Excel.decodeBytes(bytes);
       final db = DatabaseHelper.instance;
 
-      // VALIDATION: Check if at least Tenants sheet exists before wiping DB
+      // Check if at least Tenants sheet exists before wiping DB
       if (!excel.tables.containsKey('Tenants')) {
         return "Error: Invalid Excel file (Missing 'Tenants' sheet)";
       }
 
-      // CRITICAL STEP: WIPE OLD DATA
+      // WIPE OLD DATA
       await db.clearAllData();
 
       int tenantsAdded = 0;
@@ -124,7 +125,7 @@ class ExcelService {
             String dNum = row[5]?.value.toString() ?? "";
 
             if (fName.isNotEmpty && dNum.isNotEmpty && excelId != null) {
-              // Create new tenant (Since DB is empty, no need to check duplicates)
+              // Create new tenant
               int newDbId = await db.createTenant(
                 Tenant(
                   firstName: fName,
@@ -194,7 +195,7 @@ class ExcelService {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return;
     final directory = await getTemporaryDirectory();
-    final path = "${directory.path}/full_database_export.xlsx";
+    final path = "${directory.path}/residencia_export.xlsx";
     File(path)
       ..createSync(recursive: true)
       ..writeAsBytesSync(fileBytes);
@@ -206,12 +207,16 @@ class ExcelService {
   Future<String?> saveToDevice() async {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return null;
+
+    String timestamp = DateFormat('yyyyMMddHHmmss').format(DateTime.now());
+    String defaultFileName = "residencia_backup_$timestamp.xlsx";
+
     String? outputFile;
 
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       outputFile = await FilePicker.platform.saveFile(
         dialogTitle: 'Save Backup',
-        fileName: 'residencia_backup.xlsx',
+        fileName: defaultFileName,
         allowedExtensions: ['xlsx'],
         type: FileType.custom,
       );
@@ -221,13 +226,11 @@ class ExcelService {
         directory = await getExternalStorageDirectory();
       }
       if (directory != null) {
-        String fileName =
-            "residencia_backup_${DateTime.now().millisecondsSinceEpoch}.xlsx";
-        outputFile = p.join(directory.path, fileName);
+        outputFile = p.join(directory.path, defaultFileName);
       }
     } else if (Platform.isIOS) {
       final directory = await getApplicationDocumentsDirectory();
-      outputFile = p.join(directory.path, "residencia_backup.xlsx");
+      outputFile = p.join(directory.path, defaultFileName);
     }
 
     if (outputFile != null) {
