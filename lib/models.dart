@@ -17,7 +17,6 @@ class Tenant {
     this.isDeleted = false,
   });
 
-  // Helper to display full name
   String get fullName => '$firstName $lastName';
 
   Tenant copyWith({
@@ -106,7 +105,7 @@ class RoomRegistration {
       'id': id,
       'tenant_id': tenantId,
       'room_number': roomNumber,
-      'check_in_date': checkInDate.toIso8601String(),
+      'check_in_date': checkInDate.toIso8601String().substring(0, 10),
       'is_deleted': isDeleted ? 1 : 0,
     };
   }

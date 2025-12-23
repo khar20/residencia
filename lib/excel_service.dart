@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'; // Required for compute
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -32,7 +32,6 @@ class ExcelService {
     ]);
 
     List<Tenant> tenants = await db.readAllTenants();
-
     tenants.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
 
     for (var t in tenants) {
@@ -62,6 +61,11 @@ class ExcelService {
         .getAllRegistrationsForExport();
 
     for (var row in rawRegs) {
+      String rawDate = row['check_in_date'].toString();
+      String cleanDate = rawDate.length >= 10
+          ? rawDate.substring(0, 10)
+          : rawDate;
+
       sheetRegs.appendRow([
         IntCellValue(row['tenant_id'] as int),
         TextCellValue(row['first_name'].toString()),
@@ -69,7 +73,7 @@ class ExcelService {
         TextCellValue(row['doc_type'].toString()),
         TextCellValue(row['doc_number'].toString()),
         TextCellValue(row['room_number'].toString()),
-        TextCellValue(row['check_in_date'].toString().split(' ')[0]),
+        TextCellValue(cleanDate),
       ]);
     }
 
@@ -77,7 +81,6 @@ class ExcelService {
   }
 
   // IMPORT
-
   static Excel _decodeExcel(List<int> bytes) {
     return Excel.decodeBytes(bytes);
   }
@@ -101,7 +104,6 @@ class ExcelService {
       }
 
       var excel = await compute(_decodeExcel, bytes);
-
       final dbHelper = DatabaseHelper.instance;
 
       if (!excel.tables.containsKey(_sheetTenants)) {
@@ -109,13 +111,13 @@ class ExcelService {
       }
 
       final db = await dbHelper.database;
-
       await dbHelper.clearAllData();
 
       int tenantsAdded = 0;
       int regsAdded = 0;
       Map<int, int> excelIdToDbId = {};
 
+      // Process Tenants
       if (excel.tables.containsKey(_sheetTenants)) {
         var table = excel.tables[_sheetTenants]!;
 
@@ -172,11 +174,12 @@ class ExcelService {
 
               if (realDbId != null) {
                 DateTime date = DateTime.tryParse(dateStr) ?? DateTime.now();
+                String dbDateString = date.toIso8601String().substring(0, 10);
 
                 await txn.insert(DatabaseHelper.tableRegistrations, {
                   'tenant_id': realDbId,
                   'room_number': room,
-                  'check_in_date': date.toIso8601String(),
+                  'check_in_date': dbDateString,
                   'is_deleted': 0,
                 });
                 regsAdded++;
@@ -193,7 +196,6 @@ class ExcelService {
   }
 
   // SAVE HELPERS
-
   Future<void> shareExcel() async {
     final fileBytes = await _generateExcelBytes();
     if (fileBytes == null) return;
