@@ -18,36 +18,89 @@ class ExcelService {
     final db = DatabaseHelper.instance;
     var excel = Excel.createExcel();
 
-    // Tenants Sheet
+    // Define Styles
+
+    // Header Style: Bold, Centered, All Borders
+    CellStyle headerStyle = CellStyle(
+      fontFamily: getFontFamily(FontFamily.Calibri),
+      bold: true,
+      horizontalAlign: HorizontalAlign.Center,
+      verticalAlign: VerticalAlign.Center,
+      leftBorder: Border(borderStyle: BorderStyle.Thin),
+      rightBorder: Border(borderStyle: BorderStyle.Thin),
+      topBorder: Border(borderStyle: BorderStyle.Thin),
+      bottomBorder: Border(borderStyle: BorderStyle.Thin),
+    );
+
+    // Body Style: Regular, All Borders
+    CellStyle bodyStyle = CellStyle(
+      fontFamily: getFontFamily(FontFamily.Calibri),
+      leftBorder: Border(borderStyle: BorderStyle.Thin),
+      rightBorder: Border(borderStyle: BorderStyle.Thin),
+      topBorder: Border(borderStyle: BorderStyle.Thin),
+      bottomBorder: Border(borderStyle: BorderStyle.Thin),
+    );
+
+    // Date Style: Body Style + Date Format (yyyy-mm-dd)
+    CellStyle dateStyle = bodyStyle.copyWith(
+      numberFormat: CustomDateTimeNumFormat(formatCode: 'yyyy-mm-dd'),
+    );
+
+    // SHEET 1: TENANTS
     Sheet sheetTenants = excel[_sheetTenants];
     excel.delete('Sheet1');
 
-    sheetTenants.appendRow([
+    List<TextCellValue> tenantHeaders = [
       TextCellValue('ID'),
       TextCellValue('First Name'),
       TextCellValue('Last Name'),
       TextCellValue('Nationality'),
       TextCellValue('Doc Type'),
       TextCellValue('Doc Number'),
-    ]);
+    ];
+
+    sheetTenants.appendRow(tenantHeaders);
+
+    // Apply Header Style
+    for (int i = 0; i < tenantHeaders.length; i++) {
+      var cell = sheetTenants.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
+      cell.cellStyle = headerStyle;
+    }
 
     List<Tenant> tenants = await db.readAllTenants();
     tenants.sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
 
-    for (var t in tenants) {
-      sheetTenants.appendRow([
+    for (int r = 0; r < tenants.length; r++) {
+      var t = tenants[r];
+      // Row index starts at 1 because 0 is header
+      int rowIndex = r + 1;
+
+      List<CellValue> rowData = [
         IntCellValue(t.id!),
         TextCellValue(t.firstName),
         TextCellValue(t.lastName),
         TextCellValue(t.nationality),
         TextCellValue(t.docType),
         TextCellValue(t.docNumber),
-      ]);
+      ];
+
+      sheetTenants.appendRow(rowData);
+
+      // Apply Body Style to entire row
+      for (int c = 0; c < rowData.length; c++) {
+        var cell = sheetTenants.cell(
+          CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex),
+        );
+        cell.cellStyle = bodyStyle;
+      }
     }
 
-    // Registrations Sheet
+    // SHEET 2: REGISTRATIONS
     Sheet sheetRegs = excel[_sheetRegistrations];
-    sheetRegs.appendRow([
+
+    List<TextCellValue> regHeaders = [
       TextCellValue('Tenant ID'),
       TextCellValue('First Name'),
       TextCellValue('Last Name'),
@@ -55,26 +108,52 @@ class ExcelService {
       TextCellValue('Doc Number'),
       TextCellValue('Room Number'),
       TextCellValue('Check-in Date'),
-    ]);
+    ];
+
+    sheetRegs.appendRow(regHeaders);
+
+    // Apply Header Style
+    for (int i = 0; i < regHeaders.length; i++) {
+      var cell = sheetRegs.cell(
+        CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
+      );
+      cell.cellStyle = headerStyle;
+    }
 
     List<Map<String, dynamic>> rawRegs = await db
         .getAllRegistrationsForExport();
 
-    for (var row in rawRegs) {
-      String rawDate = row['check_in_date'].toString();
-      String cleanDate = rawDate.length >= 10
-          ? rawDate.substring(0, 10)
-          : rawDate;
+    for (int r = 0; r < rawRegs.length; r++) {
+      var row = rawRegs[r];
+      int rowIndex = r + 1;
 
-      sheetRegs.appendRow([
+      DateTime dateVal =
+          DateTime.tryParse(row['check_in_date'].toString()) ?? DateTime.now();
+
+      List<CellValue> rowData = [
         IntCellValue(row['tenant_id'] as int),
         TextCellValue(row['first_name'].toString()),
         TextCellValue(row['last_name'].toString()),
         TextCellValue(row['doc_type'].toString()),
         TextCellValue(row['doc_number'].toString()),
         TextCellValue(row['room_number'].toString()),
-        TextCellValue(cleanDate),
-      ]);
+        DateCellValue.fromDateTime(dateVal),
+      ];
+
+      sheetRegs.appendRow(rowData);
+
+      // Apply Styles
+      for (int c = 0; c < rowData.length; c++) {
+        var cell = sheetRegs.cell(
+          CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex),
+        );
+
+        if (c == 6) {
+          cell.cellStyle = dateStyle;
+        } else {
+          cell.cellStyle = bodyStyle;
+        }
+      }
     }
 
     return excel.save();
@@ -95,7 +174,6 @@ class ExcelService {
 
     try {
       File file = File(result.files.single.path!);
-
       List<int> bytes;
       try {
         bytes = await file.readAsBytes();
@@ -126,8 +204,10 @@ class ExcelService {
             if (row.length < 6) continue;
 
             int? excelId;
-            if (row[0]?.value != null) {
-              excelId = int.tryParse(row[0]!.value.toString());
+            // Handle different cell value types safely
+            var idVal = row[0]?.value;
+            if (idVal != null) {
+              excelId = int.tryParse(idVal.toString());
             }
 
             String fName = row[1]?.value.toString() ?? "";
@@ -145,7 +225,6 @@ class ExcelService {
                 'doc_number': dNum,
                 'is_deleted': 0,
               });
-
               tenantsAdded++;
               excelIdToDbId[excelId] = newDbId;
             }
@@ -162,8 +241,9 @@ class ExcelService {
             if (row.length < 7) continue;
 
             int? excelTenantId;
-            if (row[0]?.value != null) {
-              excelTenantId = int.tryParse(row[0]!.value.toString());
+            var idVal = row[0]?.value;
+            if (idVal != null) {
+              excelTenantId = int.tryParse(idVal.toString());
             }
 
             String room = row[5]?.value.toString() ?? "";
@@ -174,12 +254,11 @@ class ExcelService {
 
               if (realDbId != null) {
                 DateTime date = DateTime.tryParse(dateStr) ?? DateTime.now();
-                String dbDateString = date.toIso8601String().substring(0, 10);
 
                 await txn.insert(DatabaseHelper.tableRegistrations, {
                   'tenant_id': realDbId,
                   'room_number': room,
-                  'check_in_date': dbDateString,
+                  'check_in_date': date.toIso8601String().substring(0, 10),
                   'is_deleted': 0,
                 });
                 regsAdded++;
