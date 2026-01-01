@@ -4,7 +4,7 @@ Future<bool> showConfirmationDialog({
   required BuildContext context,
   required String title,
   required String content,
-  String confirmText = 'Confirm',
+  String confirmText = 'Confirmar',
   Color confirmColor = Colors.blue,
 }) async {
   return await showDialog<bool>(
@@ -15,7 +15,7 @@ Future<bool> showConfirmationDialog({
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: const Text('Cancelar'),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(

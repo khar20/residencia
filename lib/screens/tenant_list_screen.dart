@@ -41,10 +41,10 @@ class _TenantListScreenState extends State<TenantListScreen> {
   Future<void> _confirmAndDeleteTenant(int id) async {
     final confirmed = await showConfirmationDialog(
       context: context,
-      title: 'Delete Tenant',
+      title: 'Eliminar Inquilino',
       content:
-          'Are you sure you want to delete this tenant? This action cannot be undone.',
-      confirmText: 'Delete',
+          '¿Está seguro de eliminar este inquilino? Esta acción no se puede deshacer.',
+      confirmText: 'Eliminar',
       confirmColor: Colors.red,
     );
 
@@ -58,12 +58,12 @@ class _TenantListScreenState extends State<TenantListScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Export Database'),
-        content: const Text('Choose how you want to export the Excel file.'),
+        title: const Text('Exportar Base de Datos'),
+        content: const Text('Elija cómo desea exportar el archivo Excel.'),
         actions: [
           TextButton.icon(
             icon: const Icon(Icons.share),
-            label: const Text('Share'),
+            label: const Text('Compartir'),
             onPressed: () async {
               Navigator.pop(ctx);
               await _excelService.shareExcel();
@@ -71,7 +71,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
           ),
           ElevatedButton.icon(
             icon: const Icon(Icons.save),
-            label: const Text('Save to Device'),
+            label: const Text('Guardar'),
             onPressed: () async {
               Navigator.pop(ctx);
               String? path = await _excelService.saveToDevice();
@@ -81,7 +81,9 @@ class _TenantListScreenState extends State<TenantListScreen> {
               ScaffoldMessenger.of(ctx).showSnackBar(
                 SnackBar(
                   content: Text(
-                    path != null ? 'Saved to: $path' : 'Failed to save file.',
+                    path != null
+                        ? 'Guardado en: $path'
+                        : 'Error al guardar archivo.',
                   ),
                 ),
               );
@@ -104,9 +106,9 @@ class _TenantListScreenState extends State<TenantListScreen> {
   }
 
   void _importExcel() async {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Importing... please wait')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Importando... por favor espere')),
+    );
 
     final message = await _excelService.importFromExcel();
 
@@ -128,12 +130,12 @@ class _TenantListScreenState extends State<TenantListScreen> {
                 controller: _searchController,
                 autofocus: true,
                 decoration: const InputDecoration(
-                  hintText: 'Search name or document...',
+                  hintText: 'Buscar nombre o documento...',
                   border: InputBorder.none,
                 ),
                 onChanged: (value) => _refreshList(query: value),
               )
-            : const Text('Tenant Manager'),
+            : const Text('Gestión de Inquilinos'),
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
@@ -152,12 +154,12 @@ class _TenantListScreenState extends State<TenantListScreen> {
           if (!_isSearching) ...[
             IconButton(
               icon: const Icon(Icons.upload_file),
-              tooltip: "Import Excel",
+              tooltip: "Importar Excel",
               onPressed: _importExcel,
             ),
             IconButton(
               icon: const Icon(Icons.download),
-              tooltip: "Export Excel",
+              tooltip: "Exportar Excel",
               onPressed: _showExportDialog,
             ),
           ],
@@ -174,8 +176,8 @@ class _TenantListScreenState extends State<TenantListScreen> {
             return Center(
               child: Text(
                 _isSearching
-                    ? 'No matches found.'
-                    : 'No tenants found. Add one!',
+                    ? 'Sin coincidencias.'
+                    : 'No hay inquilinos. ¡Agrega uno!',
               ),
             );
           }
@@ -224,7 +226,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
                           children: [
                             Icon(Icons.edit),
                             SizedBox(width: 8),
-                            Text('Edit'),
+                            Text('Editar'),
                           ],
                         ),
                       ),
@@ -234,7 +236,7 @@ class _TenantListScreenState extends State<TenantListScreen> {
                           children: [
                             Icon(Icons.delete),
                             SizedBox(width: 8),
-                            Text('Delete'),
+                            Text('Eliminar'),
                           ],
                         ),
                       ),
@@ -329,9 +331,9 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
     if (widget.tenant != null) {
       final confirm = await showConfirmationDialog(
         context: context,
-        title: 'Save Changes?',
-        content: 'Update this tenant?',
-        confirmText: 'Update',
+        title: '¿Guardar Cambios?',
+        content: '¿Desea actualizar este inquilino?',
+        confirmText: 'Actualizar',
       );
       if (!confirm) return;
     }
@@ -357,7 +359,9 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.tenant == null ? 'New Tenant' : 'Edit Tenant'),
+      title: Text(
+        widget.tenant == null ? 'Nuevo Inquilino' : 'Editar Inquilino',
+      ),
       content: SingleChildScrollView(
         child: Form(
           key: _formKey,
@@ -366,18 +370,18 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
             children: [
               TextFormField(
                 controller: fNameCtrl,
-                decoration: const InputDecoration(labelText: 'First Name'),
-                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+                decoration: const InputDecoration(labelText: 'Nombres'),
+                validator: (val) => val!.trim().isEmpty ? 'Requerido' : null,
               ),
-
               TextFormField(
                 controller: lNameCtrl,
-                decoration: const InputDecoration(labelText: 'Last Name'),
-                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+                decoration: const InputDecoration(labelText: 'Apellidos'),
+                validator: (val) => val!.trim().isEmpty ? 'Requerido' : null,
               ),
+              const SizedBox(height: 10),
 
               _buildAutocomplete(
-                label: 'Document Type',
+                label: 'Tipo de Documento',
                 initialValue: currentDocType,
                 options: availableDocTypes,
                 onChanged: (val) => currentDocType = val,
@@ -385,12 +389,14 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
 
               TextFormField(
                 controller: docNumCtrl,
-                decoration: const InputDecoration(labelText: 'Document Number'),
-                validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Número de Documento',
+                ),
+                validator: (val) => val!.trim().isEmpty ? 'Requerido' : null,
               ),
 
               _buildAutocomplete(
-                label: 'Nationality',
+                label: 'Nacionalidad',
                 initialValue: currentNationality,
                 options: availableNationalities,
                 onChanged: (val) => currentNationality = val,
@@ -402,9 +408,9 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const Text('Cancelar'),
         ),
-        ElevatedButton(onPressed: _save, child: const Text('Save')),
+        ElevatedButton(onPressed: _save, child: const Text('Guardar')),
       ],
     );
   }
@@ -438,7 +444,7 @@ class _TenantFormDialogState extends State<TenantFormDialog> {
           onChanged: (val) {
             onChanged(val);
           },
-          validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+          validator: (val) => val!.trim().isEmpty ? 'Requerido' : null,
         );
       },
     );

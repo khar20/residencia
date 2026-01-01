@@ -46,9 +46,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   Future<void> _confirmAndDeleteRegistration(int id) async {
     final confirmed = await showConfirmationDialog(
       context: context,
-      title: 'Delete Registration',
-      content: 'Are you sure you want to remove this room history?',
-      confirmText: 'Delete',
+      title: 'Eliminar Registro',
+      content: '¿Está seguro de eliminar este historial?',
+      confirmText: 'Eliminar',
       confirmColor: Colors.red,
     );
 
@@ -82,7 +82,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         children: [
           const Icon(Icons.info_outline, color: Colors.blue),
           const SizedBox(width: 10),
-          Expanded(child: Text("History for ${widget.tenant.fullName}")),
+          Expanded(child: Text("Historial de: ${widget.tenant.fullName}")),
         ],
       ),
     );
@@ -99,7 +99,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           return Center(child: Text("Error: ${snapshot.error}"));
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Center(child: Text("No room history"));
+          return const Center(child: Text("Sin historial de habitaciones"));
         }
 
         final registrations = snapshot.data!;
@@ -110,9 +110,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             final reg = registrations[index];
             return ListTile(
               leading: const Icon(Icons.bedroom_parent),
-              title: Text('Room: ${reg.roomNumber}'),
+              title: Text('Habitación: ${reg.roomNumber}'),
               subtitle: Text(
-                'Date: ${DateFormat('yyyy-MM-dd').format(reg.checkInDate)}',
+                'Fecha: ${DateFormat('dd/MM/yy').format(reg.checkInDate)}',
               ),
               trailing: PopupMenuButton(
                 onSelected: (value) {
@@ -129,7 +129,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       children: [
                         Icon(Icons.edit),
                         SizedBox(width: 8),
-                        Text('Edit'),
+                        Text('Editar'),
                       ],
                     ),
                   ),
@@ -139,7 +139,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       children: [
                         Icon(Icons.delete),
                         SizedBox(width: 8),
-                        Text('Delete'),
+                        Text('Eliminar'),
                       ],
                     ),
                   ),
@@ -189,6 +189,7 @@ class __RegistrationFormDialogState extends State<_RegistrationFormDialog> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
+      locale: const Locale('es', ''),
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -203,9 +204,9 @@ class __RegistrationFormDialogState extends State<_RegistrationFormDialog> {
     if (_isEditing) {
       final confirmed = await showConfirmationDialog(
         context: context,
-        title: 'Save Changes?',
-        content: 'Are you sure you want to update this registration?',
-        confirmText: 'Update',
+        title: '¿Guardar Cambios?',
+        content: '¿Desea actualizar este registro?',
+        confirmText: 'Actualizar',
       );
       if (!confirmed) return;
     }
@@ -229,7 +230,7 @@ class __RegistrationFormDialogState extends State<_RegistrationFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(_isEditing ? 'Edit Registration' : 'Register Room'),
+      title: Text(_isEditing ? 'Editar Registro' : 'Registrar Habitación'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -237,18 +238,20 @@ class __RegistrationFormDialogState extends State<_RegistrationFormDialog> {
           children: [
             TextFormField(
               controller: _roomCtrl,
-              decoration: const InputDecoration(labelText: 'Room Number'),
-              validator: (val) => val!.trim().isEmpty ? 'Required' : null,
+              decoration: const InputDecoration(
+                labelText: 'Número de Habitación',
+              ),
+              validator: (val) => val!.trim().isEmpty ? 'Requerido' : null,
             ),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Check-in Date: "),
+                const Text("Fecha Entrada: "),
                 TextButton.icon(
                   icon: const Icon(Icons.calendar_today),
                   label: Text(
-                    DateFormat('yyyy-MM-dd').format(_selectedDate),
+                    DateFormat('dd/MM/yy').format(_selectedDate),
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   onPressed: _pickDate,
@@ -261,11 +264,11 @@ class __RegistrationFormDialogState extends State<_RegistrationFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: const Text('Cancelar'),
         ),
         ElevatedButton(
           onPressed: _save,
-          child: Text(_isEditing ? 'Save' : 'Register'),
+          child: Text(_isEditing ? 'Guardar' : 'Registrar'),
         ),
       ],
     );

@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart'; // Required for compute
+import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,8 +10,8 @@ import 'db_helper.dart';
 import 'models.dart';
 
 class ExcelService {
-  static const String _sheetTenants = 'Tenants';
-  static const String _sheetRegistrations = 'Registrations';
+  static const String _sheetTenants = 'Inquilinos';
+  static const String _sheetRegistrations = 'Registros';
 
   // EXPORT
   Future<List<int>?> _generateExcelBytes() async {
@@ -32,7 +32,6 @@ class ExcelService {
       bottomBorder: Border(borderStyle: BorderStyle.Thin),
     );
 
-    // Body Style: Regular, All Borders
     CellStyle bodyStyle = CellStyle(
       fontFamily: getFontFamily(FontFamily.Calibri),
       leftBorder: Border(borderStyle: BorderStyle.Thin),
@@ -41,9 +40,8 @@ class ExcelService {
       bottomBorder: Border(borderStyle: BorderStyle.Thin),
     );
 
-    // Date Style: Body Style + Date Format (yyyy-mm-dd)
     CellStyle dateStyle = bodyStyle.copyWith(
-      numberFormat: CustomDateTimeNumFormat(formatCode: 'yyyy-mm-dd'),
+      numberFormat: CustomDateTimeNumFormat(formatCode: 'dd/mm/yyyy'),
     );
 
     // SHEET 1: TENANTS
@@ -52,16 +50,15 @@ class ExcelService {
 
     List<TextCellValue> tenantHeaders = [
       TextCellValue('ID'),
-      TextCellValue('First Name'),
-      TextCellValue('Last Name'),
-      TextCellValue('Nationality'),
-      TextCellValue('Doc Type'),
-      TextCellValue('Doc Number'),
+      TextCellValue('Nombres'),
+      TextCellValue('Apellidos'),
+      TextCellValue('Nacionalidad'),
+      TextCellValue('Tipo Doc'),
+      TextCellValue('N° Documento'),
     ];
 
     sheetTenants.appendRow(tenantHeaders);
 
-    // Apply Header Style
     for (int i = 0; i < tenantHeaders.length; i++) {
       var cell = sheetTenants.cell(
         CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -74,7 +71,6 @@ class ExcelService {
 
     for (int r = 0; r < tenants.length; r++) {
       var t = tenants[r];
-      // Row index starts at 1 because 0 is header
       int rowIndex = r + 1;
 
       List<CellValue> rowData = [
@@ -88,7 +84,6 @@ class ExcelService {
 
       sheetTenants.appendRow(rowData);
 
-      // Apply Body Style to entire row
       for (int c = 0; c < rowData.length; c++) {
         var cell = sheetTenants.cell(
           CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex),
@@ -101,18 +96,17 @@ class ExcelService {
     Sheet sheetRegs = excel[_sheetRegistrations];
 
     List<TextCellValue> regHeaders = [
-      TextCellValue('Tenant ID'),
-      TextCellValue('First Name'),
-      TextCellValue('Last Name'),
-      TextCellValue('Doc Type'),
-      TextCellValue('Doc Number'),
-      TextCellValue('Room Number'),
-      TextCellValue('Check-in Date'),
+      TextCellValue('ID Inquilino'),
+      TextCellValue('Nombres'),
+      TextCellValue('Apellidos'),
+      TextCellValue('Tipo Doc'),
+      TextCellValue('N° Doc'),
+      TextCellValue('N° Habitación'),
+      TextCellValue('Fecha Entrada'),
     ];
 
     sheetRegs.appendRow(regHeaders);
 
-    // Apply Header Style
     for (int i = 0; i < regHeaders.length; i++) {
       var cell = sheetRegs.cell(
         CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0),
@@ -142,12 +136,10 @@ class ExcelService {
 
       sheetRegs.appendRow(rowData);
 
-      // Apply Styles
       for (int c = 0; c < rowData.length; c++) {
         var cell = sheetRegs.cell(
           CellIndex.indexByColumnRow(columnIndex: c, rowIndex: rowIndex),
         );
-
         if (c == 6) {
           cell.cellStyle = dateStyle;
         } else {
@@ -170,7 +162,7 @@ class ExcelService {
       allowedExtensions: ['xlsx'],
     );
 
-    if (result == null) return "Cancelled";
+    if (result == null) return "Cancelado";
 
     try {
       File file = File(result.files.single.path!);
@@ -178,14 +170,14 @@ class ExcelService {
       try {
         bytes = await file.readAsBytes();
       } on FileSystemException catch (e) {
-        return "Error: Could not read file. Is it open? (${e.message})";
+        return "Error: No se pudo leer el archivo. ¿Está abierto en Excel? (${e.message})";
       }
 
       var excel = await compute(_decodeExcel, bytes);
       final dbHelper = DatabaseHelper.instance;
 
       if (!excel.tables.containsKey(_sheetTenants)) {
-        return "Error: Invalid Excel file (Missing '$_sheetTenants' sheet)";
+        return "Error: Archivo inválido (Falta hoja '$_sheetTenants')";
       }
 
       final db = await dbHelper.database;
@@ -204,16 +196,13 @@ class ExcelService {
             if (row.length < 6) continue;
 
             int? excelId;
-            // Handle different cell value types safely
             var idVal = row[0]?.value;
-            if (idVal != null) {
-              excelId = int.tryParse(idVal.toString());
-            }
+            if (idVal != null) excelId = int.tryParse(idVal.toString());
 
             String fName = row[1]?.value.toString() ?? "";
             String lName = row[2]?.value.toString() ?? "";
             String nat = row[3]?.value.toString() ?? "";
-            String dType = row[4]?.value.toString() ?? "ID";
+            String dType = row[4]?.value.toString() ?? "";
             String dNum = row[5]?.value.toString() ?? "";
 
             if (fName.isNotEmpty && dNum.isNotEmpty && excelId != null) {
@@ -242,9 +231,7 @@ class ExcelService {
 
             int? excelTenantId;
             var idVal = row[0]?.value;
-            if (idVal != null) {
-              excelTenantId = int.tryParse(idVal.toString());
-            }
+            if (idVal != null) excelTenantId = int.tryParse(idVal.toString());
 
             String room = row[5]?.value.toString() ?? "";
             String dateStr = row[6]?.value.toString() ?? "";
@@ -268,9 +255,9 @@ class ExcelService {
         });
       }
 
-      return "Database Replaced: $tenantsAdded Tenants, $regsAdded Registrations";
+      return "Base de datos reemplazada: $tenantsAdded Inquilinos, $regsAdded Registros";
     } catch (e) {
-      return "Error: $e";
+      return "Error inesperado: $e";
     }
   }
 
@@ -286,7 +273,7 @@ class ExcelService {
       ..writeAsBytesSync(fileBytes);
 
     await SharePlus.instance.share(
-      ShareParams(files: [XFile(path)], text: 'Residencia Backup'),
+      ShareParams(files: [XFile(path)], text: 'Respaldo de Base de Datos'),
     );
   }
 
@@ -300,7 +287,7 @@ class ExcelService {
 
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       outputFile = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save Backup',
+        dialogTitle: 'Guardar Respaldo',
         fileName: defaultFileName,
         allowedExtensions: ['xlsx'],
         type: FileType.custom,
